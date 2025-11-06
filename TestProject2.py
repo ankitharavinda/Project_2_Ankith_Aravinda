@@ -1,4 +1,3 @@
-# part5_model_testing.py  (fixed to match checkpoint)
 import os, torch, torch.nn as nn
 from torchvision import transforms
 from PIL import Image
@@ -8,7 +7,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class_names = ["crack", "missing-head", "paint-off"]
 IMG_SIZE = (128, 128)
-MATRIX = 15  # <-- must match training that produced the checkpoint
+MATRIX = 15
 
 mean = [0.485, 0.456, 0.406]
 std  = [0.229, 0.224, 0.225]
@@ -18,7 +17,6 @@ transform = transforms.Compose([
     transforms.Normalize(mean, std)
 ])
 
-# --- MODEL (matches checkpoint head exactly) ---
 model = nn.Sequential(
     nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(),
     nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
@@ -42,8 +40,7 @@ model = nn.Sequential(
 ).to(device)
 
 state = torch.load("best_model.pt", map_location=device)
-# If you’re 100% sure the architecture matches, strict=True is fine.
-# If this still errors (e.g., tiny naming differences), set strict=False.
+
 model.load_state_dict(state, strict=True)
 model.eval()
 

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 IMG_SIZE = (128)
 BATCH_SIZE = 16
 EPOCHS = 30
-LR = 1e-4
+LR = 1e-3
 PATIENCE = 8
 MATRIX = 15
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,7 +45,7 @@ model = nn.Sequential(
 
     nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(),
     nn.Conv2d(128, 128, 3, padding=1), nn.ReLU(),
-    nn.MaxPool2d(3),
+    nn.MaxPool2d(2),
 
     # Pool to 10x10 feature maps instead of 1x1
     nn.AdaptiveAvgPool2d((MATRIX, MATRIX)),
@@ -122,7 +122,7 @@ for epoch in range(1, EPOCHS + 1):
 
     if val_loss < best_loss:
         best_loss, wait = val_loss, 0
-        torch.save(model.state_dict(), "best_model.pt")
+        torch.save(model.state_dict(), "best_model.h5")
     else:
         wait += 1
         if wait >= patience:
