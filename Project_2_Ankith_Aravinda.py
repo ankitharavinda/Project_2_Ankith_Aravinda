@@ -1,70 +1,81 @@
-import os, time, torch, torch.nn as nn, torch.optim as optim
+import os, torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-IMG_SIZE = (500, 500)
-BATCH_SIZE = 3
-EPOCHS = 10
-LR = 5e-3
+IMG_SIZE = (128)
+BATCH_SIZE = 16
+EPOCHS = 30
+LR = 1e-4
 PATIENCE = 8
+MATRIX = 15
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
-mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+normalize = transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
+
 train_tfms = transforms.Compose([
-    transforms.Resize(IMG_SIZE),
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomAffine(0, shear=10, scale=(0.9, 1.1)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize(mean, std)
+    normalize
 ])
+
 valid_tfms = transforms.Compose([
-    transforms.Resize(IMG_SIZE),
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(mean, std)
+    normalize
 ])
 train_ds = datasets.ImageFolder("train", transform=train_tfms)
 valid_ds = datasets.ImageFolder("valid", transform=valid_tfms)
 train_dl = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 valid_dl = DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=False)
-print("Classes:", train_ds.classes)
 
 model = nn.Sequential(
     nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(),
     nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
     nn.MaxPool2d(2),
+
     nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
     nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
     nn.MaxPool2d(2),
+
     nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(),
     nn.Conv2d(128, 128, 3, padding=1), nn.ReLU(),
-    nn.MaxPool2d(2),
-    nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(),
-    nn.Linear(128, 128), nn.ReLU(),
-    nn.Dropout(0.3),
+    nn.MaxPool2d(3),
+
+    # Pool to 10x10 feature maps instead of 1x1
+    nn.AdaptiveAvgPool2d((MATRIX, MATRIX)),
+    nn.Flatten(),
+
+    # Adjust Linear input size: 128 channels × 10 × 10 = 12800
+    nn.Linear(128 * MATRIX * MATRIX, 512), nn.ReLU(),
+    nn.Dropout(0.4),
+    nn.Linear(512, 128), nn.ReLU(),
+    nn.Dropout(0.4),
     nn.Linear(128, len(train_ds.classes))
 ).to(device)
 
 loss_fn = nn.CrossEntropyLoss()
-opt = optim.Adam(model.parameters(), lr=LR)
+optimizer = optim.Adam(model.parameters(), lr=LR)
 
 best_loss, patience, wait = float("inf"), PATIENCE, 0
 history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
 
 for epoch in range(1, EPOCHS + 1):
-    start_time = time.time()
     model.train()
     total, correct, running_loss = 0, 0, 0
-    train_bar = tqdm(train_dl, desc=f"Epoch {epoch}/{EPOCHS} [Train]", leave=False, ncols=80)
+    train_bar = tqdm(train_dl, desc=f"{epoch}/{EPOCHS} [Trn]", leave=False, ncols=80)
     for x, y in train_bar:
         x, y = x.to(device), y.to(device)
-        opt.zero_grad()
+        optimizer.zero_grad()
         out = model(x)
         loss = loss_fn(out, y)
         loss.backward()
-        opt.step()
+        optimizer.step()
 
         running_loss += loss.item() * x.size(0)
         correct += (out.argmax(1) == y).sum().item()
@@ -72,13 +83,9 @@ for epoch in range(1, EPOCHS + 1):
 
         avg_loss = running_loss / total
         avg_acc = correct / total
-        elapsed = time.time() - start_time
-        speed = elapsed / max(total, 1)
-        est = speed * (len(train_ds) - total)
         train_bar.set_postfix({
             "loss": f"{avg_loss:.4f}",
-            "acc": f"{avg_acc:.3f}",
-            "elapsed": f"{elapsed/60:.1f}m",
+            "acc": f"{avg_acc:.3f}"
         })
 
     train_loss, train_acc = running_loss / total, correct / total
@@ -97,21 +104,16 @@ for epoch in range(1, EPOCHS + 1):
 
             avg_loss = running_loss / total
             avg_acc = correct / total
-            elapsed = time.time() - start_time
-            est = elapsed * (len(valid_dl) * BATCH_SIZE / max(total, 1) - 1)
             val_bar.set_postfix({
                 "loss": f"{avg_loss:.4f}",
-                "acc": f"{avg_acc:.3f}",
-                "elapsed": f"{elapsed/60:.1f}m",
+                "acc": f"{avg_acc:.3f}"
             })
 
     val_loss, val_acc = running_loss / total, correct / total
 
-    elapsed = time.time() - start_time
     print(f"Epoch {epoch:02d}/{EPOCHS} | "
           f"Train Loss {train_loss:.4f} Acc {train_acc:.4f} | "
-          f"Val Loss {val_loss:.4f} Acc {val_acc:.4f} | "
-          )
+          f"Val Loss {val_loss:.4f} Acc {val_acc:.4f}")
 
     history["train_loss"].append(train_loss)
     history["val_loss"].append(val_loss)
